@@ -1,0 +1,155 @@
+<div class="min-h-screen bg-gray-900 text-white flex flex-col items-center py-10 px-4">
+  <h1 class="text-4xl font-bold mb-2 text-yellow-400">Connect Four</h1>
+  <p class="text-gray-400 mb-8 text-sm">Monte Carlo Tree Search + ResNet</p>
+
+  <%!-- Status message --%>
+  <div class="mb-6 px-6 py-3 rounded-xl bg-gray-800 border border-gray-700 text-center max-w-lg w-full">
+    <span class={[
+      "font-semibold text-lg",
+      @status == :game_over && String.contains?(@message, "venceu") && "text-green-400",
+      @status == :game_over && String.contains?(@message, "Empate") && "text-yellow-400",
+      @status == :thinking && "text-blue-400 animate-pulse",
+      @status == :training && "text-orange-400 animate-pulse",
+      @status not in [:game_over, :thinking, :training] && "text-white"
+    ]}>
+      {@message}
+    </span>
+  </div>
+
+  <%!-- SETUP SCREEN --%>
+  <%= if @status in [:setup, :training] do %>
+    <div class="flex flex-col items-center gap-6 w-full max-w-md">
+      <%!-- Train button --%>
+      <div class="w-full bg-gray-800 rounded-2xl p-6 border border-gray-700">
+        <h2 class="text-xl font-semibold mb-3 text-orange-400">Treinar novo modelo</h2>
+        <p class="text-gray-400 text-sm mb-4">
+          8 iterações, 10 self-plays por iteração.
+        </p>
+        <button
+          phx-click="train"
+          disabled={@training}
+          class="w-full py-3 rounded-xl font-bold text-white bg-orange-600 hover:bg-orange-500 disabled:opacity-50 disabled:cursor-not-allowed transition"
+        >
+          {if @training, do: "Treinando...", else: "Iniciar treinamento"}
+        </button>
+
+        <%= if @training and @training_progress.phase do %>
+          <div class="mt-4">
+            <div class="flex justify-between text-sm text-gray-400 mb-1">
+              <span>{progress_label(@training_progress)}</span>
+              <span>{@training_progress.current}/{@training_progress.total}</span>
+            </div>
+            <div class="w-full bg-gray-700 rounded-full h-2">
+              <div
+                class="bg-orange-500 h-2 rounded-full transition-all"
+                style={"width: #{progress_pct(@training_progress)}%"}
+              >
+              </div>
+            </div>
+          </div>
+        <% end %>
+      </div>
+
+      <%!-- Load model --%>
+      <div class="w-full bg-gray-800 rounded-2xl p-6 border border-gray-700">
+        <div class="flex justify-between items-center mb-3">
+          <h2 class="text-xl font-semibold text-blue-400">Carregar modelo salvo</h2>
+          <button phx-click="refresh_models" class="text-xs text-gray-400 hover:text-white">
+            ↻ atualizar
+          </button>
+        </div>
+
+        <%= if @available_models == [] do %>
+          <p class="text-gray-500 text-sm">Nenhum modelo encontrado. Treine primeiro.</p>
+        <% else %>
+          <div class="flex flex-wrap gap-2">
+            <%= for iteration <- @available_models do %>
+              <button
+                phx-click="load_model"
+                phx-value-iteration={iteration}
+                class="px-4 py-2 rounded-lg bg-blue-700 hover:bg-blue-600 text-sm font-semibold transition"
+              >
+                Modelo {iteration}
+              </button>
+            <% end %>
+          </div>
+        <% end %>
+      </div>
+    </div>
+  <% end %>
+
+  <%!-- GAME BOARD --%>
+  <%= if @status in [:playing, :thinking, :game_over] do %>
+    <%!-- Column drop buttons --%>
+    <div class="flex gap-2 mb-2">
+      <%= for col <- 0..6 do %>
+        <button
+          phx-click="drop"
+          phx-value-col={col}
+          disabled={@status != :playing or Enum.at(@valid_moves, col) != 1}
+          class={[
+            "w-12 h-8 rounded-t-lg font-bold text-sm transition",
+            (@status == :playing and Enum.at(@valid_moves, col) == 1) &&
+              "bg-yellow-500 hover:bg-yellow-400 text-gray-900 cursor-pointer",
+            (@status != :playing or Enum.at(@valid_moves, col) != 1) &&
+              "bg-gray-700 text-gray-500 cursor-not-allowed"
+          ]}
+        >
+          ↓
+        </button>
+      <% end %>
+    </div>
+
+    <%!-- Board --%>
+    <div class="bg-blue-800 p-3 rounded-2xl shadow-2xl mb-6">
+      <%= for row <- @board do %>
+        <div class="flex gap-2 mb-2">
+          <%= for cell <- row do %>
+            <div class={[
+              "w-12 h-12 rounded-full shadow-inner border-2 border-blue-900",
+              cell == 1 && "bg-red-500 border-red-700 shadow-red-900",
+              cell == -1 && "bg-yellow-400 border-yellow-600 shadow-yellow-900",
+              cell == 0 && "bg-blue-950"
+            ]}>
+            </div>
+          <% end %>
+        </div>
+      <% end %>
+    </div>
+
+    <%!-- Column labels --%>
+    <div class="flex gap-2 mb-6">
+      <%= for col <- 0..6 do %>
+        <div class="w-12 text-center text-xs text-gray-500">{col}</div>
+      <% end %>
+    </div>
+
+    <%!-- Legend --%>
+    <div class="flex gap-6 text-sm mb-6">
+      <div class="flex items-center gap-2">
+        <div class="w-5 h-5 rounded-full bg-yellow-400"></div>
+        <span class="text-gray-300">Você</span>
+      </div>
+      <div class="flex items-center gap-2">
+        <div class="w-5 h-5 rounded-full bg-red-500"></div>
+        <span class="text-gray-300">IA</span>
+      </div>
+    </div>
+
+    <%!-- Controls --%>
+    <div class="flex gap-3">
+      <button
+        phx-click="new_game"
+        class="px-6 py-2 rounded-xl bg-green-700 hover:bg-green-600 font-semibold transition"
+      >
+        Nova partida
+      </button>
+      <button
+        phx-click="back_to_setup"
+        class="px-6 py-2 rounded-xl bg-gray-700 hover:bg-gray-600 font-semibold transition"
+      >
+        Trocar modelo
+      </button>
+    </div>
+  <% end %>
+</div>
